@@ -1,15 +1,17 @@
 import { useMemo, useState } from 'react';
-import { ArrowLeft, Volume2, Trash2 } from 'lucide-react';
+import { ArrowLeft, Volume2, Trash2, XCircle } from 'lucide-react';
 import { vocabularyThemes } from '../data/vocabulary';
 import { conversations } from '../data/conversations';
-import { getProgress, clearProgress } from '../utils/storage';
+import { getProgress, clearProgress, unmarkWordLearned } from '../utils/storage';
 import { speak } from '../utils/speech';
 
 export default function Review({ onBack }) {
   const [tab, setTab] = useState('words');
   const [confirmClear, setConfirmClear] = useState(false);
+  // 用 counter 触发 re-read progress（删除后刷新）
+  const [refreshKey, setRefreshKey] = useState(0);
 
-  const progress = useMemo(() => getProgress(), []);
+  const progress = useMemo(() => getProgress(), [refreshKey]);
 
   const learnedWords = useMemo(() => {
     const items = [];
@@ -112,18 +114,33 @@ export default function Review({ onBack }) {
             ) : (
               <div className="grid grid-cols-2 gap-3">
                 {learnedWords.map((w, i) => (
-                  <button
+                  <div
                     key={i}
-                    onClick={() => speak(w.word)}
-                    className="bg-white rounded-2xl p-4 card-shadow big-button text-center"
+                    className="relative"
                   >
-                    <div className="text-4xl mb-2">{w.emoji}</div>
-                    <div className="font-black text-gray-800 text-lg">{w.word}</div>
-                    <div className="text-xs text-purple-400 font-semibold mt-1 flex items-center justify-center gap-1">
-                      <Volume2 className="w-3 h-3" />
-                      {w.themeName}
-                    </div>
-                  </button>
+                    <button
+                      onClick={() => speak(w.word)}
+                      className="w-full bg-white rounded-2xl p-4 card-shadow big-button text-center"
+                    >
+                      <div className="text-4xl mb-2">{w.emoji}</div>
+                      <div className="font-black text-gray-800 text-lg">{w.word}</div>
+                      <div className="text-xs text-purple-400 font-semibold mt-1 flex items-center justify-center gap-1">
+                        <Volume2 className="w-3 h-3" />
+                        {w.themeName}
+                      </div>
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        unmarkWordLearned(w.themeId, w.word);
+                        setRefreshKey((k) => k + 1);
+                      }}
+                      className="absolute -top-2 -right-2 w-7 h-7 bg-red-500 text-white rounded-full flex items-center justify-center shadow-lg hover:bg-red-600 big-button"
+                      title="Remove from learned"
+                    >
+                      <XCircle className="w-5 h-5" strokeWidth={3} />
+                    </button>
+                  </div>
                 ))}
               </div>
             )}

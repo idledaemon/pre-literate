@@ -103,6 +103,17 @@ export function markWordLearned(themeId, word) {
   }
 }
 
+export function unmarkWordLearned(themeId, word) {
+  const p = getProgress();
+  if (!p.learnedWords[themeId]) return;
+  const idx = p.learnedWords[themeId].indexOf(word);
+  if (idx !== -1) {
+    p.learnedWords[themeId].splice(idx, 1);
+    if (p.learnedWords[themeId].length === 0) delete p.learnedWords[themeId];
+    saveProgress(p);
+  }
+}
+
 export function markDialogueLearned(sceneId, index) {
   const p = getProgress();
   if (!p.learnedDialogues[sceneId]) p.learnedDialogues[sceneId] = [];
