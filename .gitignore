@@ -22,8 +22,3 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
-
-# Generated word-atlas assets (re-downloadable via scripts/)
-public/wa-thumb/
-public/wa-audio-us/
-public/wa-audio-uk/
