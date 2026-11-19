@@ -1,9 +1,24 @@
-import { useState, useMemo, useEffect } from 'react';
-import { ArrowLeft, ChevronLeft, ChevronRight, Volume2, Check, RotateCcw } from 'lucide-react';
+import { useState, useMemo, useEffect, useRef } from 'react';
+import { ArrowLeft, ChevronLeft, ChevronRight, Volume2, Check, RotateCcw, Quote, BookOpen } from 'lucide-react';
 import { vocabularyThemes } from '../data/vocabulary';
 import { speak } from '../utils/speech';
 import { getWaIllustration } from '../utils/word-atlas';
 import { markWordLearned, getProgress } from '../utils/storage';
+import waEntries from '../../public/wa-entries.json';
+
+// SFX 播放器（预加载 + 缓存）
+const sfxCache = {};
+function playSfx(name) {
+  try {
+    if (!sfxCache[name]) {
+      sfxCache[name] = new Audio(`/wa-sfx/${name}.mp3`);
+      sfxCache[name].volume = 0.5;
+    }
+    const a = sfxCache[name];
+    a.currentTime = 0;
+    a.play().catch(() => {});
+  } catch {}
+}
 
 export default function WordCards({ themeId, difficulty, onBack }) {
   const theme = useMemo(
@@ -17,12 +32,13 @@ export default function WordCards({ themeId, difficulty, onBack }) {
   }, [theme, difficulty]);
 
   const [index, setIndex] = useState(0);
-  const [showMeaning, setShowMeaning] = useState(false); // false=front(词+图)  true=back(中文+发音)
+  const [showMeaning, setShowMeaning] = useState(false);
   const [learnedSet, setLearnedSet] = useState(() => {
     const p = getProgress();
     return new Set(p.learnedWords[themeId] || []);
   });
   const [imgFailed, setImgFailed] = useState({});
+  const [playingEx, setPlayingEx] = useState(null);
 
   useEffect(() => {
     setIndex(0);
@@ -44,26 +60,50 @@ export default function WordCards({ themeId, difficulty, onBack }) {
   const word = wordList[index];
   const progress = ((index + 1) / wordList.length) * 100;
   const isLearned = learnedSet.has(word.word);
+  const entry = waEntries[word.word.toLowerCase()] || waEntries[word.word];
 
   const waImg = getWaIllustration(word.word);
   const imgError = !!imgFailed[word.word];
   const showRealImg = waImg && !imgError;
 
   const handleNext = () => {
+    playSfx('page');
     setShowMeaning(false);
     if (index < wordList.length - 1) setIndex(index + 1);
   };
   const handlePrev = () => {
+    playSfx('page');
     setShowMeaning(false);
     if (index > 0) setIndex(index - 1);
   };
   const handleMarkLearned = () => {
     markWordLearned(themeId, word.word);
     setLearnedSet((prev) => new Set([...prev, word.word]));
+    playSfx('complete');
     speak('Great job!');
   };
   const handleSpeak = () => speak(word.word, { word: word.word, skipAutoplayGate: true });
-  const toggleMeaning = () => setShowMeaning((v) => !v);
+  const toggleMeaning = () => {
+    playSfx('flip');
+    setShowMeaning((v) => !v);
+  };
+
+  // 播放例句音频
+  const playExample = (idx) => {
+    if (!entry) return;
+    playSfx('tap');
+    setPlayingEx(idx);
+    const audio = new Audio(`/wa-audio-ex/${word.word.toLowerCase()}.mp3`);
+    audio.onended = () => {
+      setPlayingEx(null);
+      // 播放完英文例句自动说中文释义让小孩听到
+      if (entry.senses?.[0]?.zh) {
+        setTimeout(() => speak(entry.senses[0].zh), 300);
+      }
+    };
+    audio.onerror = () => setPlayingEx(null);
+    audio.play().catch(() => setPlayingEx(null));
+  };
 
   return (
     <div className="min-h-screen page-transition flex flex-col">
@@ -129,49 +169,101 @@ export default function WordCards({ themeId, difficulty, onBack }) {
               <div className="text-white text-4xl font-black text-center tracking-wide drop-shadow-lg">
                 {word.word}
               </div>
+              {entry?.ipa_us && (
+                <div className="text-white/70 text-lg font-mono mt-1">
+                  {entry.ipa_us}
+                </div>
+              )}
               <div className="text-white/70 text-xs mt-2 font-semibold flex items-center gap-1">
                 Tap to see meaning <RotateCcw className="w-3 h-3" />
               </div>
             </div>
           </div>
 
-          {/* BACK: Chinese meaning + emoji + pronounce */}
+          {/* BACK: 完整词条 */}
           <div
-            className={`absolute inset-0 bg-white rounded-[2.5rem] card-shadow flex flex-col items-center justify-center p-6 transition-opacity duration-300 ${
+            className={`absolute inset-0 bg-white rounded-[2.5rem] card-shadow overflow-hidden transition-opacity duration-300 ${
               showMeaning ? 'opacity-100' : 'opacity-0 pointer-events-none'
             }`}
           >
-            <div className="text-[7rem] leading-none mb-3">{word.emoji}</div>
-            <div className="text-gray-800 text-5xl font-black text-center mb-2">
-              {word.word}
-            </div>
-
-            {/* Chinese meaning */}
-            {word.zh ? (
-              <div className="bg-gradient-to-r from-orange-100 to-pink-100 px-5 py-2 rounded-2xl mb-4">
-                <span className="text-orange-600 font-black text-xl">
-                  {word.zh}
-                </span>
+            <div className="h-full flex flex-col p-5 overflow-y-auto">
+              {/* 头部：emoji + word + ipa */}
+              <div className="flex items-start gap-3 mb-3">
+                <div className="text-5xl leading-none">{word.emoji}</div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-gray-900 text-3xl font-black leading-tight">{word.word}</div>
+                  {entry?.ipa_us && (
+                    <div className="text-gray-500 font-mono text-sm mt-0.5">
+                      US {entry.ipa_us} {entry.ipa_uk && <span className="text-gray-400">UK {entry.ipa_uk}</span>}
+                    </div>
+                  )}
+                </div>
               </div>
-            ) : (
-              <div className="text-gray-300 text-sm font-semibold mb-4">(no zh)</div>
-            )}
 
-            <div className="text-gray-400 text-xs mb-3">CEFR {word.cefr} · {word.difficulty}</div>
+              {/* 词性 + 中文释义 */}
+              <div className="space-y-1.5 mb-3">
+                {entry?.senses?.length ? entry.senses.slice(0, 3).map((s, i) => (
+                  <div key={i} className="flex items-start gap-2">
+                    <span className="shrink-0 text-[10px] font-black text-purple-600 bg-purple-100 px-1.5 py-0.5 rounded mt-0.5">
+                      {s.pos}
+                    </span>
+                    <span className="text-gray-700 font-bold text-base">{s.zh}</span>
+                  </div>
+                )) : word.zh ? (
+                  <div className="text-gray-700 font-bold text-lg">{word.zh}</div>
+                ) : null}
+              </div>
 
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                handleSpeak();
-              }}
-              className="bg-gradient-to-br from-purple-500 to-indigo-600 text-white font-bold px-6 py-3 rounded-2xl flex items-center gap-2 big-button"
-            >
-              <Volume2 className="w-5 h-5" />
-              Say it again
-            </button>
+              {/* 例句区 */}
+              {entry?.examples?.length > 0 && (
+                <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl p-3 mb-3">
+                  <div className="flex items-center gap-1.5 text-indigo-600 font-black text-xs mb-2">
+                    <BookOpen className="w-3.5 h-3.5" />
+                    Example Sentences
+                  </div>
+                  {entry.examples.slice(0, 2).map((ex, i) => (
+                    <div
+                      key={i}
+                      className="flex items-start gap-2 mb-2 last:mb-0 cursor-pointer hover:bg-white/60 rounded-xl p-1.5 -mx-1.5 transition-colors"
+                      onClick={(e) => { e.stopPropagation(); playExample(i); }}
+                    >
+                      <button
+                        className={`shrink-0 w-7 h-7 rounded-full flex items-center justify-center transition-colors ${
+                          playingEx === i ? 'bg-indigo-500 text-white animate-pulse' : 'bg-indigo-500 text-white'
+                        }`}
+                        onClick={(e) => { e.stopPropagation(); playExample(i); }}
+                      >
+                        <Volume2 className="w-3.5 h-3.5" />
+                      </button>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-gray-800 text-sm font-semibold leading-snug">{ex.en}</div>
+                        <div className="text-gray-500 text-xs mt-0.5">{ex.zh}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
 
-            <div className="text-gray-300 text-[10px] mt-3 font-semibold">
-              Tap to flip back ↻
+              {/* CEFR tag */}
+              <div className="text-gray-400 text-[10px] font-semibold mb-2">
+                CEFR {word.cefr} · {word.difficulty}
+              </div>
+
+              {/* Say it again button */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleSpeak();
+                }}
+                className="bg-gradient-to-br from-purple-500 to-indigo-600 text-white font-bold px-5 py-2.5 rounded-2xl flex items-center gap-2 big-button self-start"
+              >
+                <Volume2 className="w-4 h-4" />
+                Say it again
+              </button>
+
+              <div className="text-gray-300 text-[10px] mt-auto pt-2 text-center font-semibold">
+                Tap to flip back ↻
+              </div>
             </div>
           </div>
         </div>

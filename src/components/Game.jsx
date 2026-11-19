@@ -5,6 +5,15 @@ import { speak, stopSpeaking } from '../utils/speech';
 import { getWaIllustration } from '../utils/word-atlas';
 import { getProgress } from '../utils/storage';
 
+// SFX 播放器
+const sfxCache = {};
+function playSfx(name) {
+  try {
+    if (!sfxCache[name]) { sfxCache[name] = new Audio(`/wa-sfx/${name}.mp3`); sfxCache[name].volume = 0.5; }
+    const a = sfxCache[name]; a.currentTime = 0; a.play().catch(() => {});
+  } catch {}
+}
+
 function shuffle(array) {
   const arr = [...array];
   for (let i = arr.length - 1; i > 0; i--) {
@@ -103,8 +112,10 @@ export default function Game({ onBack }) {
     setSelected(option.word);
     if (option.word === question.word) {
       setScore((s) => s + 1);
+      playSfx('correct');
       speak('Correct! Nice!');
     } else {
+      playSfx('wrong');
       speak(`Oops, it is ${question.word}`, { skipAutoplayGate: true });
     }
     setTimeout(() => { setQuestion(null); generateQuestion(); }, 1800);
@@ -148,7 +159,7 @@ export default function Game({ onBack }) {
               return (
                 <button
                   key={lvl.key}
-                  onClick={() => !disabled && startGame(lvl.key)}
+                  onClick={() => { playSfx('tap'); !disabled && startGame(lvl.key); }}
                   disabled={disabled}
                   className={`w-full bg-gradient-to-br ${lvl.color} rounded-3xl card-shadow big-button p-5 text-left flex items-center gap-4 ${
                     disabled ? 'opacity-50 cursor-not-allowed' : ''
@@ -212,7 +223,7 @@ export default function Game({ onBack }) {
                 <div className="h-full bg-gradient-to-r from-purple-500 to-pink-500 rounded-full transition-all duration-1000" style={{ width: `${percent}%` }} />
               </div>
             </div>
-            <button onClick={() => startGame(difficulty)} className="w-full bg-gradient-to-br from-orange-400 to-red-500 text-white font-black text-xl py-4 rounded-2xl card-shadow big-button">
+            <button onClick={() => { playSfx('ignite'); startGame(difficulty); }} className="w-full bg-gradient-to-br from-orange-400 to-red-500 text-white font-black text-xl py-4 rounded-2xl card-shadow big-button">
               Play Again! 🎮
             </button>
             <button onClick={() => setDifficulty(null)} className="w-full mt-3 bg-gray-200 text-gray-600 font-bold py-3 rounded-2xl big-button">
