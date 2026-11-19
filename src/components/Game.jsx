@@ -42,17 +42,35 @@ export default function Game({ onBack }) {
   const [skipped, setSkipped] = useState(new Set());
   const [imgFailed, setImgFailed] = useState({});
 
-  // 按难度过滤词池
+  // 按难度过滤词池 —— 用 word 字符串去重，防止跨主题重复
   const pool = useMemo(() => {
-    if (!difficulty) return allWords; // null = Mixed (all words)
+    if (!difficulty) {
+      const seen = new Set();
+      return allWords.filter((w) => {
+        if (seen.has(w.word)) return false;
+        seen.add(w.word);
+        return true;
+      });
+    }
     if (difficulty === 'learned') {
-      // 只从「已学会」的词里出题 —— 收集所有 themeId 下的 learned words
       const p = getProgress();
       const learned = new Set();
       Object.values(p.learnedWords).forEach((arr) => arr.forEach((w) => learned.add(w)));
-      return allWords.filter((w) => learned.has(w.word));
+      const seen = new Set();
+      return allWords.filter((w) => {
+        if (!learned.has(w.word)) return false;
+        if (seen.has(w.word)) return false;
+        seen.add(w.word);
+        return true;
+      });
     }
-    return allWords.filter((w) => w.difficulty === difficulty);
+    const seen = new Set();
+    return allWords.filter((w) => {
+      if (w.difficulty !== difficulty) return false;
+      if (seen.has(w.word)) return false;
+      seen.add(w.word);
+      return true;
+    });
   }, [difficulty]);
 
   const startGame = (diff) => {
@@ -70,21 +88,32 @@ export default function Game({ onBack }) {
       setGameOver(true);
       return;
     }
-    const available = pool.filter((w) => !skipped.has(w.word));
-    const pickPool = available.length >= 5 ? available : pool;
+    // 从未出过的词里选，池太小就回到全池
+    let available = pool.filter((w) => !skipped.has(w.word));
+    if (available.length < 4) available = pool;
 
-    // Find a correct answer, always from this difficulty's pool
-    let correct, wrongs;
-    if (pickPool.length >= 4) {
-      correct = sampleRandom(pickPool, 1)[0];
-      wrongs = sampleRandom(pool.filter((w) => w.word !== correct.word), 3);
-    } else {
-      // Pool too small — still only pick wrongs from same difficulty
-      correct = sampleRandom(pool, 1)[0];
-      wrongs = sampleRandom(
-        allWords.filter((w) => w.difficulty === difficulty && w.word !== correct.word),
-        3
+    // 保证 pool 至少 4 个词（难度选择页已经 disabled 了 <4 的情况）
+    if (available.length < 4) {
+      // 极端兜底：从全量 allWords 里抽（已去重）
+      const seen = new Set();
+      available = allWords.filter((w) => {
+        if (seen.has(w.word)) return false;
+        seen.add(w.word);
+        return true;
+      }).slice(0, 100);
+    }
+
+    const correct = sampleRandom(available, 1)[0];
+    // wrongs 从同一个 available 池抽，确保不重复、不与 correct 重名
+    const wrongPool = available.filter((w) => w.word !== correct.word);
+    const wrongs = sampleRandom(wrongPool, Math.min(3, wrongPool.length));
+    // 如果 wrongs 不够 3 个（极端小池），从全量补
+    if (wrongs.length < 3) {
+      const extra = sampleRandom(
+        allWords.filter((w) => w.word !== correct.word && !wrongs.some((x) => x.word === w.word)),
+        3 - wrongs.length
       );
+      wrongs.push(...extra);
     }
 
     const opts = shuffle([correct, ...wrongs]);
@@ -94,7 +123,7 @@ export default function Game({ onBack }) {
     setQuestionCount((c) => c + 1);
     setSkipped((prev) => new Set([...prev, correct.word]));
 
-    // Auto-speak the correct answer AFTER state updates — use the local `correct`
+    // Auto-speak the correct answer
     const wordToSpeak = correct.word;
     setTimeout(() => {
       speak(wordToSpeak, { word: wordToSpeak, skipAutoplayGate: true });
