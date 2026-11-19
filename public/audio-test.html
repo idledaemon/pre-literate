@@ -1,0 +1,121 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Audio Test</title>
+<style>
+body{font-family:system-ui;padding:20px;background:#f0f0f0}
+.card{background:white;padding:16px;border-radius:12px;margin:12px 0;box-shadow:0 2px 8px rgba(0,0,0,.1)}
+button{font-size:18px;padding:12px 20px;border-radius:10px;border:none;background:#4f46e5;color:white;font-weight:700;margin:4px;cursor:pointer}
+button.green{background:#10b981}
+button.orange{background:#f59e0b}
+button.gray{background:#6b7280}
+pre{background:#111;color:#0f0;padding:12px;border-radius:8px;font-size:12px;max-height:300px;overflow:auto}
+h2{margin:0 0 8px;font-size:18px}
+</style>
+</head>
+<body>
+<h1>🔊 Happy Kids Audio Diagnostic</h1>
+<p>Tap any button. The browser will log details below.</p>
+
+<div class="card">
+  <h2>1. System Info</h2>
+  <div id="sys">Loading...</div>
+</div>
+
+<div class="card">
+  <h2>2. Pre-recorded MP3 (word-atlas US)</h2>
+  <button class="green" onclick="testMP3()">▶ Play cat.mp3</button>
+  <button class="gray" onclick="stopAudio()">■ Stop</button>
+  <div id="mp3log"></div>
+</div>
+
+<div class="card">
+  <h2>3. Web Speech API TTS</h2>
+  <button class="orange" onclick="testTTS('cat')">▶ TTS: "cat"</button>
+  <button class="orange" onclick="testTTS('hello how are you')">▶ TTS: sentence</button>
+  <button class="gray" onclick="stopTTS()">■ Stop</button>
+  <div id="ttslog"></div>
+</div>
+
+<div class="card">
+  <h2>4. Available Voices</h2>
+  <div id="voices">Loading... (may take a moment)</div>
+</div>
+
+<div class="card">
+  <h2>5. All Voices (en only)</h2>
+  <pre id="allvoices">Loading...</pre>
+</div>
+
+<script>
+function log(id, msg) {
+  const el = document.getElementById(id);
+  el.innerHTML += '<div>' + msg + '</div>';
+}
+function clearlog(id) { document.getElementById(id).innerHTML = ''; }
+
+// System info
+const sys = document.getElementById('sys');
+sys.innerHTML = 'Web Speech API: ' + (window.speechSynthesis ? '✅ YES' : '❌ NO') +
+  '<br>Audio API: ' + (window.Audio ? '✅ YES' : '❌ NO') +
+  '<br>Browser: ' + navigator.userAgent.substring(0, 80);
+
+// Voices list
+function loadVoices() {
+  const voices = window.speechSynthesis.getVoices();
+  const en = voices.filter(v => v.lang.startsWith('en'));
+  document.getElementById('voices').innerHTML = 
+    '<b>Total voices:</b> ' + voices.length + 
+    '<br><b>English voices:</b> ' + en.length +
+    '<br><b>First en-US:</b> ' + (en.find(v => v.lang === 'en-US')?.name || 'NOT FOUND');
+  document.getElementById('allvoices').textContent = 
+    voices.map(v => v.lang + ' | ' + v.name + (v.default ? ' ★' : '')).join('\n');
+}
+if (window.speechSynthesis) {
+  loadVoices();
+  window.speechSynthesis.onvoiceschanged = loadVoices;
+}
+
+// Test MP3
+let audio = null;
+function testMP3() {
+  clearlog('mp3log');
+  log('mp3log', '▶ Creating Audio("/wa-audio-us/cat.mp3")');
+  audio = new Audio('/wa-audio-us/cat.mp3');
+  audio.preload = 'auto';
+  audio.oncanplay = () => log('mp3log', '✅ canplay fired, duration=' + audio.duration);
+  audio.onplay = () => log('mp3log', '✅ onplay fired — audio IS playing!');
+  audio.onended = () => log('mp3log', '✅ onended fired');
+  audio.onerror = (e) => log('mp3log', '❌ ERROR code=' + audio.error?.code + ' msg=' + audio.error?.message);
+  audio.volume = 1.0;
+  const p = audio.play();
+  if (p && typeof p.then === 'function') {
+    p.then(() => log('mp3log', '✅ play() promise resolved')).catch(e => log('mp3log', '❌ play() rejected: ' + e.message));
+  }
+}
+function stopAudio() { if (audio) { audio.pause(); audio.currentTime = 0; audio = null; } }
+
+// Test TTS
+function testTTS(text) {
+  clearlog('ttslog');
+  if (!window.speechSynthesis) { log('ttslog', '❌ NO Web Speech API'); return; }
+  log('ttslog', '▶ speak("' + text + '")');
+  window.speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = 'en-US';
+  u.rate = 0.85;
+  u.pitch = 1.1;
+  u.volume = 1.0;
+  const voices = window.speechSynthesis.getVoices();
+  const v = voices.find(v => v.lang === 'en-US') || voices.find(v => v.lang.startsWith('en'));
+  if (v) { u.voice = v; log('ttslog', '✅ voice: ' + v.name); }
+  else { log('ttslog', '⚠️  No en voice found, using default'); }
+  u.onstart = () => log('ttslog', '✅ onstart fired — TTS IS speaking!');
+  u.onend = () => log('ttslog', '✅ onend fired');
+  u.onerror = (e) => log('ttslog', '❌ onerror: ' + e.error);
+  window.speechSynthesis.speak(u);
+  log('ttslog', 'speak() called. queue size=' + window.speechSynthesis.pending);
+}
+function stopTTS() { window.speechSynthesis.cancel(); }
+</script>
+</body>
+</html>
